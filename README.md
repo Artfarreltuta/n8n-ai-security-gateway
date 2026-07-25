@@ -18,6 +18,10 @@ An event-driven, privacy-first middleware built to secure LLM communications. Th
 
 ## 🔄 Workflow Diagram
 
+![Core Gateway Architecture](https://github.com/Artfarreltuta/n8n-ai-security-gateway/raw/main/%5BCore%5D%20AI%20Security%20Gateway.png)
+
+![Telegram Listener Architecture](https://github.com/Artfarreltuta/n8n-ai-security-gateway/raw/main/%5BHelper%5D%20Telegram%20Callback%20Listener.png)
+
 1. `POST Request` ➡️ **Webhook** (Receives raw prompt from external system)
 2. **Data Masking Engine** (Vaults secrets, sanitizes payload)
 3. **Smart Router** ➡️ **Telegram Bot** (Sends approval request to Admin)
