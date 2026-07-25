@@ -1,0 +1,445 @@
+{
+  "name": "[Core] AI Security Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const inputData = $input.item.json;\n// Берем текст из объекта body, который прислал Webhook\nlet originalPrompt = inputData.body.prompt;\n\n// Vault to store detected secrets securely\nlet secretsVault = {};\nlet maskedPrompt = originalPrompt;\nlet secretCounter = 1;\n\n// 1. Define search patterns (RegEx)\nconst patterns = {\n    medusaToken: /mjs_sec_[a-zA-Z0-9]+/g,\n    apiKey: /sk-[a-zA-Z0-9\\-]+/g,\n    email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g\n};\n\n// 2. Function to mask data and store it in the vault\nfunction maskData(pattern, text) {\n    if (!text) return text; // Защита от пустых значений\n    return text.replace(pattern, (match) => {\n        const placeholder = `[SECRET_${secretCounter}]`;\n        secretsVault[placeholder] = match; // Store actual key in the vault\n        secretCounter++;\n        return placeholder;\n    });\n}\n\n// 3. Apply all patterns sequentially\nmaskedPrompt = maskData(patterns.medusaToken, maskedPrompt);\nmaskedPrompt = maskData(patterns.apiKey, maskedPrompt);\nmaskedPrompt = maskData(patterns.email, maskedPrompt);\n\n// 4. Prepare payload for the next step\nreturn {\n    json: {\n        ...inputData,\n        original_prompt: originalPrompt,\n        prompt: maskedPrompt,\n        vault: secretsVault,\n        has_secrets: Object.keys(secretsVault).length > 0\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ],
+      "id": "88c79faf-6919-44db-9027-d0622a2eb720",
+      "name": "Data Masking Engine"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ JSON.stringify($json.vault).includes('mjs_sec') ? 'critical' : ($json.has_secrets ? 'review' : 'clean') }}",
+                    "rightValue": "critical",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "74d1ce73-88b5-4899-8c15-1a7c96063bf4"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "156e384b-3b96-4478-9a7e-a10a6854fafc",
+                    "leftValue": "={{ JSON.stringify($json.vault).includes('mjs_sec') ? 'critical' : ($json.has_secrets ? 'review' : 'clean') }}",
+                    "rightValue": "review",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "43f0196f-3774-4401-90e0-e663e1d62e6b",
+                    "leftValue": "={{ JSON.stringify($json.vault).includes('mjs_sec') ? 'critical' : ($json.has_secrets ? 'review' : 'clean') }}",
+                    "rightValue": "clean",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        496,
+        -16
+      ],
+      "id": "77c66dc5-b49f-4815-97d7-d64dfd616b38",
+      "name": "Smart Router"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"deepseek/deepseek-v4-flash\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $('Data Masking Engine').item.json.prompt }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1344,
+        -16
+      ],
+      "id": "9286c3f1-41fe-4c79-9f7e-c911a8dd852d",
+      "name": "OpenRouter Cloud"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  json: {\n    // Mocking a standard LLM API response structure\n    choices: [{\n      message: {\n        content: \"This is a response from the secure local fallback. I have analyzed your prompt: \" + $input.item.json.prompt\n      }\n    }],\n    // Pass the vault forward to the unmasking step\n    vault: $input.item.json.vault\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        -432
+      ],
+      "id": "7738ca26-6e37-4119-aafb-a4d7024af408",
+      "name": "Mock Local LLM"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retrieve the generated text from the LLM\nlet llmResponse = $input.item.json.choices[0].message.content;\nconst vault = $input.item.json.vault || {};\n\n// Iterate through the vault and replace placeholders with original secrets\nfor (const [placeholder, secret] of Object.entries(vault)) {\n    // Using split and join to replace ALL occurrences in case the LLM repeated the placeholder\n    llmResponse = llmResponse.split(placeholder).join(secret);\n}\n\n// Prepare the clean final output\nreturn {\n    json: {\n        status: \"success\",\n        final_response: llmResponse\n        // Notice: We intentionally drop the 'vault' here so secrets don't leak into logs\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1536,
+        -16
+      ],
+      "id": "46cddaa3-d048-4cdd-99d6-9ac0d074b117",
+      "name": "Data Unmasking Engine"
+    },
+    {
+      "parameters": {
+        "chatId": "7046074396",
+        "text": "=⚠️ *Security Alert: Review Required* ⚠️\n\nSuspicious data detected in outbound LLM request.\n\n*Original Prompt:* \n_{{ $json.original_prompt }}_\n\n*Detected Secrets:* \n{{ Object.keys($json.vault).length }} item(s)\n\nPlease approve or block this request.",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Approve & Send",
+                    "additionalFields": {
+                      "callback_data": "=approve_{{ $execution.id }}"
+                    }
+                  },
+                  {
+                    "text": "🚫 Block",
+                    "additionalFields": {
+                      "callback_data": "=block_{{ $execution.id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "438df48f-0c8e-4615-bcd6-ea267e84e3d8",
+      "name": "Send a text message",
+      "webhookId": "fca9f443-b4ea-42a3-8064-925920ad00b3",
+      "credentials": {
+        "telegramApi": {
+          "id": "K8a1vGNVcGvv4wni",
+          "name": "Telegram account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        816,
+        0
+      ],
+      "id": "46d97359-2c48-4056-a8f4-d32fe98e51a4",
+      "name": "Wait",
+      "webhookId": "f8d3161c-e8b9-4dd2-8e37-c113aa5fd92d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "218e177f-bb06-47ed-a332-81aca031a7e4",
+              "leftValue": "={{ $json.query.action }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "520076ec-06ed-43a4-af54-6745906ec4c6",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "secure-ai-route",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        112,
+        0
+      ],
+      "id": "d8a1d199-ac94-40e0-a82f-ae6686fe6684",
+      "name": "Webhook",
+      "webhookId": "c7878bef-6e3e-4821-8070-1a31471b65b7"
+    },
+    {
+      "parameters": {
+        "content": "1. INGRESS & SANITIZATION\nReceives webhook payloads and strictly masks sensitive data (sk-keys, PII) into vaults.",
+        "height": 736,
+        "width": 320,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        112,
+        -304
+      ],
+      "typeVersion": 1,
+      "id": "683fda0f-334f-4773-aeb4-1d9db2dff677",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "2. HUMAN-IN-THE-LOOP (HITL)\nExecution paused. Awaits manual admin approval via Telegram before reaching external clouds.",
+        "height": 736,
+        "width": 688
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        464,
+        -304
+      ],
+      "typeVersion": 1,
+      "id": "a480922f-974f-48cd-9e22-d6dce55fbe37",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "LOCAL AI BYPASS (No HITL)\nSafe local execution inside Google Antigravity. Bypasses approval since data doesn't leave the machine.",
+        "height": 192,
+        "width": 688,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        464,
+        -512
+      ],
+      "typeVersion": 1,
+      "id": "a231098a-7ab7-496e-a55b-15ecd0e86418",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "3. SECURE AI GENERATION\nProcesses masked prompts in OpenRouter and restores original secrets into the final response payload.",
+        "height": 736,
+        "width": 512,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1248,
+        -304
+      ],
+      "typeVersion": 1,
+      "id": "d37d5582-512f-47c6-ad25-3f2a1cf55e7f",
+      "name": "Sticky Note3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Data Masking Engine": {
+      "main": [
+        [
+          {
+            "node": "Smart Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Smart Router": {
+      "main": [
+        [
+          {
+            "node": "Mock Local LLM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Mock Local LLM": {
+      "main": [
+        [
+          {
+            "node": "Data Unmasking Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Cloud": {
+      "main": [
+        [
+          {
+            "node": "Data Unmasking Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Cloud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Data Masking Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "30ff6917-a529-48fa-8358-18ff27541ec5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7893c9c20295b2972d535643c430a4a4a19571f5af35d0f7b7f6f96b07066ef9"
+  },
+  "id": "NSGEsREkIPrI98Fy",
+  "tags": []
+}

@@ -1,0 +1,109 @@
+{
+  "name": "[Helper] Telegram Callback Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -368,
+        -32
+      ],
+      "id": "845e2c45-5862-450d-9ac1-62c7b1f0a25c",
+      "name": "Telegram Trigger",
+      "webhookId": "758561ca-db32-471a-b477-892ab7d6ac1c",
+      "credentials": {
+        "telegramApi": {
+          "id": "K8a1vGNVcGvv4wni",
+          "name": "Telegram account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the callback string sent by the button (e.g., \"approve_34\")\nconst callbackData = $input.item.json.data || $input.item.json.callback_query?.data;\n\nif (!callbackData) {\n    throw new Error(\"No callback data found in the payload\");\n}\n\n// Split the string into the action (approve/block) and the Execution ID (34)\nconst [action, executionId] = callbackData.split('_');\n\n// Prepare the parsed data for the webhook call\nreturn {\n    json: {\n        action: action, // 'approve' or 'block'\n        executionId: executionId // e.g., '34'\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -32
+      ],
+      "id": "53a3e495-dc1d-4733-af58-51c53f680832",
+      "name": "Parse Action & ID"
+    },
+    {
+      "parameters": {
+        "url": "=http://127.0.0.1:5678/webhook-waiting/{{ $json.executionId }}?action={{ $json.action }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        48,
+        -32
+      ],
+      "id": "b7fda992-3ec9-4c74-bbc8-c7701fa027bf",
+      "name": "Wake Up Gateway"
+    },
+    {
+      "parameters": {
+        "content": "TELEGRAM WEBHOOK LISTENER\nCaptures button clicks (Approve/Reject) from the admin and resumes the paused Core Gateway execution.",
+        "height": 656,
+        "width": 656,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -432,
+        -304
+      ],
+      "typeVersion": 1,
+      "id": "267b6445-c776-4723-8a1d-8eb6ab7904ed",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Action & ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Action & ID": {
+      "main": [
+        [
+          {
+            "node": "Wake Up Gateway",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "74b23464-c992-4e0d-b59f-9b2b5fb6b3df",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7893c9c20295b2972d535643c430a4a4a19571f5af35d0f7b7f6f96b07066ef9"
+  },
+  "id": "Q4PkB1ZFwA5bJbgW",
+  "tags": []
+}
