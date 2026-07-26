@@ -1,50 +1,92 @@
-# 🛡️ Human-in-the-Loop AI Security Gateway
+# 🛡️ AI Security Gateway (Human-in-the-Loop)
 
-An event-driven, privacy-first middleware built to secure LLM communications. This gateway intercepts outgoing prompts, detects and masks sensitive data (PII, API keys, internal tokens), and enforces a manual Human-in-the-Loop (HITL) approval process before routing requests to external cloud AI providers.
+> An event-driven, Zero-Trust AI security middleware built with **n8n**, **OpenRouter API**, and **Telegram Webhooks**. Features dynamic secrets masking (DLP) and asynchronous Human-in-the-Loop (HITL) manual approval routing.
 
-## 🚀 Architecture & Core Features
+---
 
-*   **Zero-Trust Data Masking:** Dynamically scans payloads using Regex-based rules to vault sensitive information (e.g., `sk-` keys, emails, MedusaJS environment variables) and replaces them with sterile placeholders (`[SECRET_1]`).
-*   **Asynchronous HITL Approval:** Pauses the execution state and sends an interactive webhook-based alert via Telegram. Cloud execution is strictly blocked until an authorized admin explicitly clicks `Approve`.
-*   **Seamless Data Unmasking:** Once the cloud LLM (e.g., DeepSeek, Gemma via OpenRouter) returns the generated content, the gateway re-injects the original vaulted secrets into the final response, keeping the cloud provider completely blind to the actual sensitive data.
-*   **Microservice Ready:** Built as a standalone API endpoint capable of servicing autonomous backend processes (such as automated product description generation for headless storefronts).
+## 🎯 Overview
 
-## 🛠️ Tech Stack
-*   **Workflow Engine:** n8n (Self-hosted)
-*   **Scripting:** JavaScript / Node.js
-*   **AI Integration:** OpenRouter API (DeepSeek, etc.)
-*   **Notifications:** Telegram Bot API
-*   **Infrastructure:** Tested in an isolated local environment (Google Antigravity / OrbStack on macOS)
+Deploying LLMs into production exposes systems to token leakage, accidental API key exposure, and uncontrolled automated actions. 
 
-## 🔄 Workflow Diagram
+This project provides a lightweight, microservice-ready security gateway. It intercepts payloads bound for external AI providers, applies Data Loss Prevention (DLP) via RegEx masking, vaults sensitive credentials, and holds critical executions in an asynchronous queue until a human operator approves them via Telegram.
 
-![Core Gateway Architecture](https://github.com/Artfarreltuta/n8n-ai-security-gateway/raw/main/%5BCore%5D%20AI%20Security%20Gateway.png)
+---
 
-![Telegram Listener Architecture](https://github.com/Artfarreltuta/n8n-ai-security-gateway/raw/main/%5BHelper%5D%20Telegram%20Callback%20Listener.png)
+## 🏗 System Architecture
 
-1. `POST Request` ➡️ **Webhook** (Receives raw prompt from external system)
-2. **Data Masking Engine** (Vaults secrets, sanitizes payload)
-3. **Smart Router** ➡️ **Telegram Bot** (Sends approval request to Admin)
-4. **Wait Node** (Suspends execution until webhook callback)
-5. **Decision Switch** (Verifies `approve` or `block` status)
-6. **OpenRouter Cloud** (Sends sanitized prompt to LLM)
-7. **Data Unmasking Engine** (Restores vaulted data into the final output)
-8. `200 OK` ➡️ Returns secure generated text to the requesting service.
+```mermaid
+graph TD
+    A[Headless App / MedusaJS] -->|Raw Payload| B[n8n Security Gateway Trigger]
+    B --> C[RegEx DLP Engine: Secrets & Keys Detection]
+    C -->|Mask & Vault Secrets| D[Sanitized Payload Buffer]
+    D --> E[Telegram Bot Webhook: HITL Approval Request]
+    E -->|Admin Clicks Approve| F[Forward to External LLM / OpenRouter]
+    E -->|Admin Clicks Reject| G[Abort Execution & Log Incident]
+    F -->|AI Response| H[Sanitized Response to Client]
+```
 
-## ⚙️ Installation & Setup
+---
 
-1. **Import Workflows:** Download the exported `.json` files from this repository and import them into your n8n instance.
-2. **Configure Credentials:**
-   *   Set up your OpenRouter API Key in the HTTP Request node.
-   *   Add your Telegram Bot Token.
-3. **Expose Webhooks:** Ensure your n8n instance can receive external callbacks (using Pinggy, Ngrok, or a reverse proxy if hosted locally).
-4. **Customize RegEx:** Modify the `Data Masking Engine` node to add custom patterns for your specific infrastructure secrets.
+## ✨ Key Features
 
-## 💡 Use Case Example
-When an automated script attempts to vibe-code or generate descriptions using a prompt like:
-`"Generate a summary for my store. My admin key is sk-admin-123456789"`
+* **Zero-Trust Data Protection:** Scans all incoming payloads for sensitive patterns (API keys, database URIs, JWTs, personal data) before reaching third-party LLMs.
+* **Dynamic RegEx Secret Vaulting:** Automatically replaces detected infrastructure secrets with secure tokens (`[REDACTED_SECRET]`).
+* **Asynchronous Human-in-the-Loop (HITL):** Pauses execution flow and triggers an interactive Telegram prompt with full context and approval/rejection buttons.
+* **Audit & Incident Logging:** Tracks all pending, approved, and blocked AI interactions for compliance and debugging.
 
-The external LLM only ever receives:
-`"Generate a summary for my store. My admin key is [SECRET_1]"`
+---
 
-Protecting your infrastructure from prompt leakage and unauthorized model training.
+## 🛠 Tech Stack
+
+* **Orchestration:** n8n (Workflow Engine)
+* **LLM Routing:** OpenRouter API / OpenAI API
+* **Security & Inspection:** RegEx Data Masking, Custom JSON Transformers
+* **HITL Interface:** Telegram Bot Webhooks & Inline Keyboards
+
+---
+
+## 📩 Payload Handling Example
+
+### Raw Input (Insecure Payload):
+```json
+{
+  "action": "generate_product_description",
+  "product_id": "prod_01J3X",
+  "context": "Connect to postgres://admin:P@ssword123@db.internal:5432/store and use key sk-or-v1-88f0a2b to query metadata."
+}
+```
+
+### Sanitized Gateway Output (Bound for OpenRouter):
+```json
+{
+  "action": "generate_product_description",
+  "product_id": "prod_01J3X",
+  "context": "Connect to [REDACTED_DB_URI] and use key [REDACTED_API_KEY] to query metadata.",
+  "hitl_status": "APPROVED_BY_ADMIN",
+  "approved_at": "2026-07-26T14:35:10Z"
+}
+```
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+* Running **n8n** instance (Local or Cloud).
+* **OpenRouter** or OpenAI API key.
+* **Telegram Bot Token** and Admin `chat_id`.
+
+### Installation
+1. Clone this repository:
+   ```bash
+   git clone [https://github.com/Artfarreltuta/n8n-ai-security-gateway.git](https://github.com/Artfarreltuta/n8n-ai-security-gateway.git)
+   ```
+2. Import `workflow.json` into your n8n workspace.
+3. Configure environment variables for `OPENROUTER_API_KEY` and `TELEGRAM_BOT_TOKEN`.
+4. Deploy the workflow and connect your client application to the incoming webhook URL.
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for details.
